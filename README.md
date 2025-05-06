@@ -101,6 +101,7 @@ curl -X POST http://<remote-server-ip>:8000/run_command \
 
 > **Tip:** You can also use the **Run Command** API to start fine-tuned models with tools like `vllm`. This API can create a process to run any commands in remote server.
 
+> **Know issue:** When streaming `stdout` and `stderr` in real-time, progress bars may not display correctly.
 ---
 
 #### **List All Processes**
