@@ -81,20 +81,37 @@ class LLamaFactoryClient:
     # ====================
     def upload_data_file(
         self,
-        file_path: Path,
+        file_path: str,
+        save_path: str,
         timeout: int = 30
     ) -> Dict:
-        """Upload data file (POST /upload_data)"""
+        """
+        Upload data file (POST /upload_data)
+        
+        Args:
+            file_path: Local file to upload
+            save_path: Target path on the server (required)
+                       If it ends with '/', treated as directory and the file will be saved inside it
+                       with the original filename
+            timeout: Request timeout in seconds
+            
+        Returns:
+            Dict with upload details including saved_path
+        """
         url = f"{self.base_url}/upload_data"
         
+        file_path = Path(file_path)
         if not file_path.is_file():
             return {"error": "File not found"}
+        
+        params = {'save_path': save_path}
         
         with open(file_path, 'rb') as f:
             files = {'file': (file_path.name, f)}
             response = self.session.post(
                 url,
                 files=files,
+                params=params,
                 timeout=timeout
             )
             response.raise_for_status()
@@ -174,7 +191,7 @@ if __name__ == "__main__":
     print("Command Result:", result)
     
     # Example 3: Upload a file
-    upload_result = client.upload_data_file(Path("test_data.csv"))
+    upload_result = client.upload_data_file(Path("test_data.csv"), save_path="/uploads/")
     print("Upload Result:", upload_result)
     
     # Example 4: Update configuration

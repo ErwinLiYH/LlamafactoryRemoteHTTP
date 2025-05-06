@@ -14,7 +14,7 @@ from typing import Dict, Any
 from datetime import datetime
 from ruamel.yaml import YAML
 from contextlib import asynccontextmanager
-from fastapi import Request
+from fastapi import Request, Query
 from fastapi.logger import logger
 from logging import StreamHandler, Formatter
 import logging
@@ -138,25 +138,15 @@ def save_config(config: Dict, file_path: Path):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving config: {str(e)}")
 
-def secure_filename(filename: str) -> Path:
-    """Clean file path and name from illegal characters while preserving folder structure"""
+def secure_filename(filename: str) -> str:
+    """Process data file name"""
     filename = filename.strip().replace(' ', '_')
-    path = Path(filename)
+    filename = Path(filename).name
 
-    allowed_chars = set(".-_()abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-    if path.parts[0] == '/':
-        raise HTTPException(status_code=400, detail=f"Invalid filename {filename}, must be relative path")
-
-    def clean_component(s):
-        return ''.join(c for c in s if c in allowed_chars)
-
-    cleaned_parts = [clean_component(part) for part in path.parts]  # Clean each parent folder
-    for p in cleaned_parts:
-        if p == '':
-            raise HTTPException(status_code=400, detail=f"Invalid filename, {filename}")
-
-    return Path(*cleaned_parts)
+    allowed_chars = set(".-_() abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+    cleaned = ''.join(c for c in filename if c in allowed_chars)
+    
+    return cleaned
 
 async def cleanup_process_registry():
     to_delete = []
@@ -256,14 +246,27 @@ async def update_json(request: ConfigUpdateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/upload_data", response_model=FileUploadResponse)
-async def upload_data(file: UploadFile = File(...)):
+async def upload_data(file: UploadFile = File(...), save_path: str = Query(..., description="Required path to save the file")):
     safe_filename = secure_filename(file.filename)
     if not safe_filename:
         raise HTTPException(400, detail="Invalid filename")
     
-    save_path = app.state.llama_factory_path / safe_filename
-    save_dir = save_path.parent
-
+    # Sanitize and validate the save path
+    try:
+        # Normalize to prevent path traversal
+        save_path = save_path.lstrip('/')
+        full_path = validate_safe_path(app.state.llama_factory_path, save_path)
+        
+        # If save_path is a directory, append the filename
+        if full_path.is_dir() or save_path.endswith('/'):
+            save_path = str(Path(save_path) / safe_filename)
+    except Exception as e:
+        raise HTTPException(403, detail=f"Invalid save path: {str(e)}")
+    
+    # Resolve the final save path
+    save_path_obj = validate_safe_path(app.state.llama_factory_path, save_path)
+    save_dir = save_path_obj.parent
+    
     if not save_dir.exists():
         try:
             save_dir.mkdir(parents=True, exist_ok=True)
@@ -271,13 +274,13 @@ async def upload_data(file: UploadFile = File(...)):
             raise HTTPException(500, detail=f"Failed to create directory: {str(e)}")
     
     try:
-        with save_path.open("wb") as buffer:
+        with save_path_obj.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
         return {
             "filename": safe_filename,
-            "saved_path": str(save_path.relative_to(app.state.llama_factory_path)),
-            "file_size": save_path.stat().st_size
+            "saved_path": str(save_path_obj.relative_to(app.state.llama_factory_path)),
+            "file_size": save_path_obj.stat().st_size
         }
     except Exception as e:
         raise HTTPException(500, detail=f"File upload failed: {str(e)}")
