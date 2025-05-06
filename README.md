@@ -1,6 +1,6 @@
 # LlamafactoryRemoteHTTP
 
-LlamafactoryRemoteHTTP is a Python package that provides an HTTP server and client for interacting with LLaMA-Factory models remotely. It allows users to run a server on a remote machine and send requests to perform various operations, such as managing configurations, running commands, and uploading files.
+LlamafactoryRemoteHTTP is a lightweight pure Python package that provides an HTTP server (`fastapi`) and client for interacting with LLaMA-Factory models remotely. It allows users to run a server on a remote machine and send requests to perform various operations, such as managing configurations, running commands, and uploading datasets.
 
 ---
 
@@ -52,7 +52,7 @@ Once the server is running, you can interact with it using Python or `curl`. Bel
 **Python Example:**
 
 ```python
-from llf_server.llamafactory_server_call import LLamaFactoryClient
+from llf_server import LLamaFactoryClient
 
 client = LLamaFactoryClient("http://<remote-server-ip>:8000")
 status = client.get_server_status()
@@ -178,8 +178,6 @@ curl -X POST http://<remote-server-ip>:8000/cleanup
 This function is designed to retrieve configuration data from a YAML config file or the `dataset.json` file.
 It parses the content of the specified file and returns the corresponding data structure.
 
-**Filepath must relative to the llamafactory path.**
-
 **Python Example:**
 
 ```python
@@ -196,6 +194,8 @@ client.close()
 ```bash
 curl http://<remote-server-ip>:8000/config/example/train_lora/llama_lora.yaml
 ```
+
+> **filepath must relative to the llamafactory root.**
 
 ---
 
@@ -246,20 +246,25 @@ This function is used in the API to modify configuration files (`YAML` or `JSON`
 
 </details>
 
-**Filepath must be relative to the llamafactory path.**
+> **`file_path` must be relative to the llamafactory root.**
 
 ---
 
 #### **Upload a File**
 
+This API is primarily used to upload fine-tuning data to a remote server.
+
 **Python Example:**
 
 ```python
 from pathlib import Path
-from llf_server.llamafactory_server_call import LLamaFactoryClient
+from llf_server import LLamaFactoryClient
 
 client = LLamaFactoryClient("http://<remote-server-ip>:8000")
-upload_result = client.upload_data_file(Path("data/test_data.csv"))
+upload_result = client.upload_data_file(
+    file_path = "path/to/local/file", # path of local file to upload
+    save_path = "path/to/save",  # path to save in remote server (relative to llamafactory root)
+)
 print("Upload Result:", upload_result)
 client.close()
 ```
@@ -267,9 +272,13 @@ client.close()
 **Curl Example:**
 
 ```bash
-curl -X POST http://<remote-server-ip>:8000/upload_data \
--F "file=@test_data.csv"
+curl -X POST "http://<remote-server-ip>:8000/upload_data?save_path=path/to/save" \
+  -F "file=@/local/path/to/yourfile.txt"
 ```
+
+> **Note:** If `save_path` ends with a `/`, it is treated as a directory, and the file will be saved with its original name in that directory. Otherwise, it is treated as the full file name.
+
+> **`save_path` must be relative to the llamafactory root.**
 
 ---
 
