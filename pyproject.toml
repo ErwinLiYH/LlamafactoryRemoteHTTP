@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llamafactory-remote-http"
+version = "0.1.0"
+description = "HTTP client and server for remote LLaMA-Factory operations"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Li Yuanhao", email = "erwinli@qq.com"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "requests>=2.25.0",
+    "fastapi>=0.95.0",
+    "pydantic>=1.10.0",
+    "uvicorn>=0.17.0",
+    "ruamel.yaml>=0.17.0",
+    "psutil>=5.9.0",
+    "python-multipart>=0.0.5",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/ErwinLiYH/LlamafactoryRemoteHTTP"
+"Bug Tracker" = "https://github.com/ErwinLiYH/LlamafactoryRemoteHTTP/issues"
+
+[project.scripts]
+llf-server = "llf_server.llamafactory_server:main"
+
+[tool.setuptools.packages.find]
+include = ["llf_server"]
