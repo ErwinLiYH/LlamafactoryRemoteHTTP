@@ -2,11 +2,11 @@ import requests
 from pathlib import Path
 from typing import Optional, Dict, Any
 from contextlib import closing
+import time
 
 class LLamaFactoryClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip('/')
-        self.session = requests.Session()  # Reuse TCP connections
 
     # ====================
     # API for System Status
@@ -14,21 +14,21 @@ class LLamaFactoryClient:
     def get_server_status(self) -> Dict:
         """Get server status (GET /status)"""
         url = f"{self.base_url}/status"
-        response = self.session.get(url)
+        response = requests.get(url)
         response.raise_for_status()
         return response.json()
 
     def manual_cleanup(self) -> Dict:
         """Manually clean up processes (POST /cleanup)"""
         url = f"{self.base_url}/cleanup"
-        response = self.session.post(url)
+        response = requests.post(url)
         response.raise_for_status()
         return response.json()
 
     def list_processes(self) -> Dict:
         """List all processes (GET /processes)"""
         url = f"{self.base_url}/processes"
-        response = self.session.get(url)
+        response = requests.get(url)
         response.raise_for_status()
         return response.json()
 
@@ -38,7 +38,7 @@ class LLamaFactoryClient:
     def get_config(self, file_path: str) -> Dict:
         """Get configuration file (GET /config/{file_path})"""
         url = f"{self.base_url}/config/{file_path.lstrip('/')}"
-        response = self.session.get(url)
+        response = requests.get(url)
         response.raise_for_status()
         return response.json()
 
@@ -55,7 +55,7 @@ class LLamaFactoryClient:
             "config": config,
             "modified_file_path": modified_file_path
         }
-        response = self.session.post(url, json=payload)
+        response = requests.post(url, json=payload)
         response.raise_for_status()
         return response.json()
 
@@ -72,7 +72,7 @@ class LLamaFactoryClient:
             "config": config,
             "modified_file_path": modified_file_path
         }
-        response = self.session.post(url, json=payload)
+        response = requests.post(url, json=payload)
         response.raise_for_status()
         return response.json()
 
@@ -102,13 +102,13 @@ class LLamaFactoryClient:
         
         file_path = Path(file_path)
         if not file_path.is_file():
-            return {"error": "File not found"}
+            raise FileNotFoundError(f"File {file_path} not found.")
         
         params = {'save_path': save_path}
         
         with open(file_path, 'rb') as f:
             files = {'file': (file_path.name, f)}
-            response = self.session.post(
+            response = requests.post(
                 url,
                 files=files,
                 params=params,
@@ -125,7 +125,9 @@ class LLamaFactoryClient:
         command: str,
         output_file: Optional[str] = None,
         print_output: bool = True,
-        process_id: Optional[str] = None
+        process_id: Optional[str] = None,
+        time_out: int = 5,
+        sleep_time: int = 1
     ) -> Dict:
         """
         Execute a command and get streaming output (POST /run_command)
@@ -136,45 +138,97 @@ class LLamaFactoryClient:
             "command": command,
             "process_id": process_id or f"client_{id(self)}"
         }
-        with closing(self.session.post(url, json=payload, stream=True)) as resp:
+        with closing(requests.post(url, json=payload, stream=True, timeout=(time_out, None))) as resp:
+            print(f"debug {command} after post, resp code: {resp.status_code}")
             resp.raise_for_status()
             
             # Get process_id
             process_id = resp.headers.get('X-Process-ID')
+            pid = resp.headers.get('X-PID')
             if not process_id:
                 raise ValueError("No process ID returned from server.")
             
             # Handle streaming output
-            output_buffer = []
             file_handle = open(output_file, 'a') if output_file else None
             
             try:
-                for chunk in resp.iter_content(chunk_size=4):
+                for chunk in resp.iter_lines():
                     if chunk:  # Filter keep-alive empty chunks
                         decoded = chunk.decode('utf-8', errors='replace')
                         
                         # Real-time output to console
                         if print_output:
-                            print(decoded, end='', flush=True)
+                            print(decoded, flush=True)
                         
                         # Write to file (if specified)
                         if file_handle:
                             file_handle.write(decoded)
                             file_handle.flush()
-                            
-                        output_buffer.append(decoded)
             finally:
                 if file_handle:
                     file_handle.close()
             
-            return process_id, ''.join(output_buffer)
+            time.sleep(sleep_time)  # Ensure totally finished
+            return process_id, pid
+        
+    def run_command_bg(
+        self,
+        command: str,
+        process_id: Optional[str] = None,
+        time_out: int = 5
+    ):
+        url = f"{self.base_url}/run_command"
+        payload = {
+            "command": command,
+            "process_id": process_id or f"client_{id(self)}"
+        }
+        resp = requests.post(url, json=payload, stream=True, timeout=(time_out, None))
+        resp.raise_for_status()
+        process_id = resp.headers.get('X-Process-ID')
+        pid = resp.headers.get('X-PID')
+        if not process_id:
+            raise ValueError("No process ID returned from server.")
+        if not pid:
+            raise ValueError("No PID returned from server.")
+        return process_id, pid, resp
+    
+    def watch_bg_command(
+        self,
+        response,
+        output_file: Optional[str] = None,
+        print_output: bool = True,
+        process_id: Optional[str] = None,
+        sleep_time: int = 1
+    ) -> Dict:
+        # Handle streaming output
+        file_handle = open(output_file, 'a') if output_file else None
 
-    # ====================
-    # Other Utility Methods
-    # ====================
-    def close(self):
-        """Close the client connection"""
-        self.session.close()
+        try:
+            for chunk in response.iter_lines():
+                if chunk:  # Filter keep-alive empty chunks
+                    decoded = chunk.decode('utf-8', errors='replace')
+                    
+                    # Real-time output to console
+                    if print_output:
+                        print(decoded, flush=True)
+                    
+                    # Write to file (if specified)
+                    if file_handle:
+                        file_handle.write(decoded)
+                        file_handle.flush()
+        finally:
+            if file_handle:
+                file_handle.close()
+
+        time.sleep(sleep_time)  # Ensure totally finished
+        return process_id
+
+    def kill_process(self, pid: int) -> Dict:
+        """Kill a running process by its ID (DELETE /process/{pid})"""
+        url = f"{self.base_url}/process/{pid}"
+        response = requests.delete(url)
+        response.raise_for_status()
+        return response.json()
 
 # Usage examples
 if __name__ == "__main__":
