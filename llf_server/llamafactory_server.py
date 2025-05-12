@@ -159,6 +159,8 @@ async def cleanup_process_registry():
         del app.state.subprocess_registry[pid]
         print(f"[CLEANUP] Removed exited process: {pid}")
 
+    return to_delete
+
 # API endpoints
 @app.get("/status")
 async def get_status():
@@ -290,7 +292,7 @@ async def upload_data(file: UploadFile = File(...), save_path: str = Query(..., 
 @app.post("/run_command")
 async def run_command(api_request: Request, request: CommandRequest):
     try:
-        logger.info(f"Running command: {request.command}")
+        logger.info(f"Beging to Running command: {request.command}")
         process = await asyncio.create_subprocess_shell(
             request.command,
             stdout=asyncio.subprocess.PIPE,
@@ -375,10 +377,33 @@ async def run_command(api_request: Request, request: CommandRequest):
                 app.state.subprocess_registry[process_id]["returncode"] = process.returncode
 
 
-        return StreamingResponse(stream_output(), media_type="text/plain", headers={"X-Process-ID": process_id})
+        return StreamingResponse(stream_output(), media_type="text/plain", headers={"X-Process-ID": process_id, "X-PID": str(process.pid)})
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/process/{pid}")
+async def kill_process(pid: str):
+    try:
+        pid_int = int(pid)
+        kill_proc_tree(pid_int)
+        
+        found = False
+        for process_id, info in app.state.subprocess_registry.items():
+            if info["pid"] == pid_int:
+                app.state.subprocess_registry[process_id]["status"] = "exited"
+                app.state.subprocess_registry[process_id]["returncode"] = -1
+                found = True
+                break
+        
+        if not found:
+            return {"status": "success", "message": f"Process {pid} was killed, but not found in registry"}
+        
+        return {"status": "success", "message": f"Process {pid} was killed successfully"}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid PID format")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to kill process: {str(e)}")
 
 def main():
     import uvicorn
