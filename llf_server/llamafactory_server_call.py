@@ -139,7 +139,6 @@ class LLamaFactoryClient:
             "process_id": process_id or f"client_{id(self)}"
         }
         with closing(requests.post(url, json=payload, stream=True, timeout=(time_out, None))) as resp:
-            print(f"debug {command} after post, resp code: {resp.status_code}")
             resp.raise_for_status()
             
             # Get process_id
