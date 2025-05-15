@@ -82,7 +82,7 @@ def kill_proc_tree(pid: int, timeout: float = 3.0, *, include_parent: bool = Tru
     if include_parent:
         parent.terminate()
 
-    gone, alive = psutil.wait_procs(
+    _, alive = psutil.wait_procs(
         children + ([parent] if include_parent else []),
         timeout=timeout
     )
@@ -319,7 +319,8 @@ async def run_command(api_request: Request, request: CommandRequest):
                 while True:
                     if await api_request.is_disconnected():
                         logger.info(f"Client disconnected. Terminating subprocess {process.pid}")
-                        kill_proc_tree(process.pid)
+                        kill_proc_tree(process.pid, include_parent=False)
+                        process.terminate()
                         break
                     stdout_task = asyncio.create_task(stdout.readline())
                     stderr_task = asyncio.create_task(stderr.readline())
@@ -366,7 +367,8 @@ async def run_command(api_request: Request, request: CommandRequest):
                 logger.error(f"Error in subprocess {process.pid}: {str(e)}")
                 try:
                     logger.info(f"Terminating subprocess {process.pid}")
-                    kill_proc_tree(process.pid)
+                    kill_proc_tree(process.pid, include_parent=False)
+                    process.terminate()
                     await process.wait()
                 except:
                     pass
@@ -385,19 +387,17 @@ async def run_command(api_request: Request, request: CommandRequest):
 @app.delete("/process/{pid}")
 async def kill_process(pid: str):
     try:
-        pid_int = int(pid)
-        kill_proc_tree(pid_int)
-        
         found = False
         for process_id, info in app.state.subprocess_registry.items():
             if info["pid"] == pid_int:
-                app.state.subprocess_registry[process_id]["status"] = "exited"
-                app.state.subprocess_registry[process_id]["returncode"] = -1
                 found = True
-                break
-        
-        if not found:
-            return {"status": "success", "message": f"Process {pid} was killed, but not found in registry"}
+        if found == False:
+            raise HTTPException(status_code=404, detail="Process not found")
+
+        pid_int = int(pid)
+        parent_process = psutil.Process(pid_int)
+        kill_proc_tree(pid_int, include_parent=False)
+        parent_process.terminate()
         
         return {"status": "success", "message": f"Process {pid} was killed successfully"}
     except ValueError:
