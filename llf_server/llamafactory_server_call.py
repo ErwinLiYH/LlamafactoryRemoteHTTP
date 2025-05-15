@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from contextlib import closing
 import time
+import re
 
 class LLamaFactoryClient:
     def __init__(self, base_url: str):
@@ -150,10 +151,14 @@ class LLamaFactoryClient:
             # Handle streaming output
             file_handle = open(output_file, 'a') if output_file else None
             
+            last_line = None
+            
             try:
                 for chunk in resp.iter_lines():
                     if chunk:  # Filter keep-alive empty chunks
                         decoded = chunk.decode('utf-8', errors='replace')
+
+                        last_line = decoded
                         
                         # Real-time output to console
                         if print_output:
@@ -161,14 +166,20 @@ class LLamaFactoryClient:
                         
                         # Write to file (if specified)
                         if file_handle:
-                            file_handle.write(decoded)
+                            file_handle.write(decoded+"\n")
                             file_handle.flush()
             finally:
                 if file_handle:
                     file_handle.close()
+
+            match = re.search(r"code:\s*(-?\d+)", last_line)
+            if match:
+                return_code = int(match.group(1))
+            else:
+                return_code = None
             
             time.sleep(sleep_time)  # Ensure totally finished
-            return process_id, pid
+            return process_id, pid, return_code
         
     def run_command_bg(
         self,
@@ -196,16 +207,19 @@ class LLamaFactoryClient:
         response,
         output_file: Optional[str] = None,
         print_output: bool = True,
-        process_id: Optional[str] = None,
         sleep_time: int = 1
     ) -> Dict:
         # Handle streaming output
         file_handle = open(output_file, 'a') if output_file else None
 
+        last_line = None
+        
         try:
             for chunk in response.iter_lines():
                 if chunk:  # Filter keep-alive empty chunks
                     decoded = chunk.decode('utf-8', errors='replace')
+
+                    last_line = decoded
                     
                     # Real-time output to console
                     if print_output:
@@ -219,8 +233,14 @@ class LLamaFactoryClient:
             if file_handle:
                 file_handle.close()
 
+        match = re.search(r"code:\s*(-?\d+)", last_line)
+        if match:
+            return_code = int(match.group(1))
+        else:
+            return_code = None
+
         time.sleep(sleep_time)  # Ensure totally finished
-        return process_id
+        return return_code
 
     def kill_process(self, pid: int) -> Dict:
         """Kill a running process by its ID (DELETE /process/{pid})"""
