@@ -319,8 +319,8 @@ async def run_command(api_request: Request, request: CommandRequest):
                 while True:
                     if await api_request.is_disconnected():
                         logger.info(f"Client disconnected. Terminating subprocess {process.pid}")
-                        kill_proc_tree(process.pid, include_parent=False)
                         process.terminate()
+                        kill_proc_tree(process.pid, include_parent=False)
                         break
                     stdout_task = asyncio.create_task(stdout.readline())
                     stderr_task = asyncio.create_task(stderr.readline())
@@ -367,13 +367,11 @@ async def run_command(api_request: Request, request: CommandRequest):
                 logger.error(f"Error in subprocess {process.pid}: {str(e)}")
                 try:
                     logger.info(f"Terminating subprocess {process.pid}")
-                    kill_proc_tree(process.pid, include_parent=False)
                     process.terminate()
+                    kill_proc_tree(process.pid, include_parent=False)
                     await process.wait()
-                except:
-                    pass
-                yield f"\n[Error: {str(e)}]\nkill sub-process\n\n"
-
+                except BaseException as e:
+                    print(f"Error terminating subprocess {process.pid}: {str(e)}")
             finally:
                 app.state.subprocess_registry[process_id]["status"] = "exited"
                 app.state.subprocess_registry[process_id]["returncode"] = process.returncode
@@ -387,6 +385,7 @@ async def run_command(api_request: Request, request: CommandRequest):
 @app.delete("/process/{pid}")
 async def kill_process(pid: str):
     try:
+        pid_int = int(pid)
         found = False
         for process_id, info in app.state.subprocess_registry.items():
             if info["pid"] == pid_int:
@@ -394,7 +393,6 @@ async def kill_process(pid: str):
         if found == False:
             raise HTTPException(status_code=404, detail="Process not found")
 
-        pid_int = int(pid)
         parent_process = psutil.Process(pid_int)
         kill_proc_tree(pid_int, include_parent=False)
         parent_process.terminate()
@@ -403,6 +401,7 @@ async def kill_process(pid: str):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid PID format")
     except Exception as e:
+        print(f"Error killing process {pid}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to kill process: {str(e)}")
 
 def main():
