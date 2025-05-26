@@ -227,7 +227,7 @@ class LLamaFactoryClient:
                     
                     # Write to file (if specified)
                     if file_handle:
-                        file_handle.write(decoded)
+                        file_handle.write(decoded+"\n")
                         file_handle.flush()
         finally:
             if file_handle:
