@@ -312,6 +312,7 @@ async def run_command(api_request: Request, request: CommandRequest):
         }
 
         async def stream_output():
+            returncode = None
             try:
                 stdout = process.stdout
                 stderr = process.stderr
@@ -362,14 +363,16 @@ async def run_command(api_request: Request, request: CommandRequest):
                 logger.error(f"Error in subprocess {process.pid}: {str(e)}")
                 try:
                     logger.info(f"Terminating subprocess {process.pid}")
-                    process.terminate()
-                    kill_proc_tree(process.pid, include_parent=False)
-                    await process.wait()
+                    kill_proc_tree(process.pid)
+                    returncode = -15
                 except BaseException as e:
                     print(f"Error terminating subprocess {process.pid}: {str(e)}")
             finally:
                 app.state.subprocess_registry[process_id]["status"] = "exited"
-                app.state.subprocess_registry[process_id]["returncode"] = process.returncode
+                if returncode is not None:
+                    app.state.subprocess_registry[process_id]["returncode"] = returncode
+                else:
+                    app.state.subprocess_registry[process_id]["returncode"] = process.returncode
 
 
         return StreamingResponse(stream_output(), media_type="text/plain", headers={"X-Process-ID": process_id, "X-PID": str(process.pid)})
