@@ -317,11 +317,6 @@ async def run_command(api_request: Request, request: CommandRequest):
                 stderr = process.stderr
 
                 while True:
-                    if await api_request.is_disconnected():
-                        logger.info(f"Client disconnected. Terminating subprocess {process.pid}")
-                        process.terminate()
-                        kill_proc_tree(process.pid, include_parent=False)
-                        break
                     stdout_task = asyncio.create_task(stdout.readline())
                     stderr_task = asyncio.create_task(stderr.readline())
 
