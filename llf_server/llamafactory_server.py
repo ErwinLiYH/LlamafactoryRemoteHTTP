@@ -387,10 +387,10 @@ async def kill_process(pid: str):
     try:
         pid_int = int(pid)
         found = False
-        for process_id, info in app.state.subprocess_registry.items():
+        for _, info in app.state.subprocess_registry.items():
             if info["pid"] == pid_int:
                 found = True
-        if found == False:
+        if found:
             raise HTTPException(status_code=404, detail="Process not found")
 
         parent_process = psutil.Process(pid_int)
